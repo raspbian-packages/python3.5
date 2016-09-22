@@ -118,7 +118,7 @@ Functions
    :exc:`ValueError` is raised). Otherwise a search using :attr:`sys.meta_path`
    is done. ``None`` is returned if no loader is found.
 
-   A dotted name does not have its parent's implicitly imported as that requires
+   A dotted name does not have its parents implicitly imported as that requires
    loading them and that may not be desired. To properly import a submodule you
    will need to import all parent packages of the submodule and use the correct
    argument to *path*.
@@ -210,6 +210,11 @@ Functions
 
 .. module:: importlib.abc
     :synopsis: Abstract base classes related to import
+
+**Source code:** :source:`Lib/importlib/abc.py`
+
+--------------
+
 
 The :mod:`importlib.abc` module contains all of the core abstract base classes
 used by :keyword:`import`. Some subclasses of the core abstract base classes
@@ -624,7 +629,7 @@ ABC hierarchy::
     .. method:: path_stats(path)
 
         Optional abstract method which returns a :class:`dict` containing
-        metadata about the specifed path.  Supported dictionary keys are:
+        metadata about the specified path.  Supported dictionary keys are:
 
         - ``'mtime'`` (mandatory): an integer or floating-point number
           representing the modification time of the source code;
@@ -699,6 +704,10 @@ ABC hierarchy::
 
 .. module:: importlib.machinery
     :synopsis: Importers and path hooks
+
+**Source code:** :source:`Lib/importlib/machinery.py`
+
+--------------
 
 This module contains the various objects that help :keyword:`import`
 find and load modules.
@@ -1081,6 +1090,11 @@ find and load modules.
 
 .. module:: importlib.util
     :synopsis: Utility code for importers
+
+
+**Source code:** :source:`Lib/importlib/util.py`
+
+--------------
 
 This module contains the various objects that help in the construction of
 an :term:`importer`.

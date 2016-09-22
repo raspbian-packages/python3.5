@@ -176,7 +176,7 @@ typedef unsigned char Py_UCS1;
 
 #define Py_UNICODE_FILL(target, value, length) \
     do {Py_ssize_t i_; Py_UNICODE *t_ = (target); Py_UNICODE v_ = (value);\
-    for (i_ = 0; i_ < (length); i_++) t_[i_] = v_;\
+        for (i_ = 0; i_ < (length); i_++) t_[i_] = v_;\
     } while (0)
 
 /* macros to work with surrogates */
@@ -2014,7 +2014,7 @@ PyAPI_FUNC(int) PyUnicode_CompareWithASCIIString(
 /* Rich compare two strings and return one of the following:
 
    - NULL in case an exception was raised
-   - Py_True or Py_False for successfully comparisons
+   - Py_True or Py_False for successful comparisons
    - Py_NotImplemented in case the type combination is unknown
 
    Note that Py_EQ and Py_NE comparisons can cause a UnicodeWarning in

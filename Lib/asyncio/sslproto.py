@@ -5,6 +5,7 @@ try:
 except ImportError:  # pragma: no cover
     ssl = None
 
+from . import base_events
 from . import compat
 from . import protocols
 from . import transports
@@ -303,6 +304,12 @@ class _SSLProtocolTransport(transports._FlowControlMixin,
     def get_extra_info(self, name, default=None):
         """Get optional transport information."""
         return self._ssl_protocol._get_extra_info(name, default)
+
+    def set_protocol(self, protocol):
+        self._app_protocol = protocol
+
+    def get_protocol(self):
+        return self._app_protocol
 
     def is_closing(self):
         return self._closed
