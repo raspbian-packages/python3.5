@@ -1265,7 +1265,6 @@ bytes_length(PyBytesObject *a)
 static PyObject *
 bytes_concat(PyObject *a, PyObject *b)
 {
-    Py_ssize_t size;
     Py_buffer va, vb;
     PyObject *result = NULL;
 
@@ -1290,13 +1289,12 @@ bytes_concat(PyObject *a, PyObject *b)
         goto done;
     }
 
-    size = va.len + vb.len;
-    if (size < 0) {
+    if (va.len > PY_SSIZE_T_MAX - vb.len) {
         PyErr_NoMemory();
         goto done;
     }
 
-    result = PyBytes_FromStringAndSize(NULL, size);
+    result = PyBytes_FromStringAndSize(NULL, va.len + vb.len);
     if (result != NULL) {
         memcpy(PyBytes_AS_STRING(result), va.buf, va.len);
         memcpy(PyBytes_AS_STRING(result) + va.len, vb.buf, vb.len);
@@ -3552,11 +3550,15 @@ _PyBytes_Resize(PyObject **pv, Py_ssize_t newsize)
     PyObject *v;
     PyBytesObject *sv;
     v = *pv;
-    if (!PyBytes_Check(v) || Py_REFCNT(v) != 1 || newsize < 0) {
-        *pv = 0;
-        Py_DECREF(v);
-        PyErr_BadInternalCall();
-        return -1;
+    if (!PyBytes_Check(v) || newsize < 0) {
+        goto error;
+    }
+    if (Py_SIZE(v) == newsize) {
+        /* return early if newsize equals to v->ob_size */
+        return 0;
+    }
+    if (Py_REFCNT(v) != 1) {
+        goto error;
     }
     /* XXX UNREF/NEWREF interface should be more symmetrical */
     _Py_DEC_REFTOTAL;
@@ -3574,6 +3576,11 @@ _PyBytes_Resize(PyObject **pv, Py_ssize_t newsize)
     sv->ob_sval[newsize] = '\0';
     sv->ob_shash = -1;          /* invalidate cached hash value */
     return 0;
+error:
+    *pv = 0;
+    Py_DECREF(v);
+    PyErr_BadInternalCall();
+    return -1;
 }
 
 void

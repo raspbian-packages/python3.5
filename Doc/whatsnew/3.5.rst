@@ -46,8 +46,7 @@
 
 This article explains the new features in Python 3.5, compared to 3.4.
 Python 3.5 was released on September 13, 2015.  See the
-`changelog <https://docs.python.org/3.5/whatsnew/changelog.html>`_ for a full
-list of changes.
+:ref:`changelog <changelog>` for a full list of changes.
 
 .. seealso::
 
@@ -742,7 +741,9 @@ publicized, either at the time or since.
 
 With the new module, bundling your application is as simple as putting all
 the files, including a ``__main__.py`` file, into a directory ``myapp``
-and running::
+and running:
+
+.. code-block:: shell-session
 
     $ python -m zipapp myapp
     $ python myapp.pyz
@@ -802,11 +803,12 @@ Notable changes in the :mod:`asyncio` module since Python 3.4.0:
   :func:`~asyncio.ensure_future`.
   (Contributed by Yury Selivanov.)
 
-* New :meth:`loop.set_task_factory() <asyncio.BaseEventLoop.set_task_factory>`
-  and :meth:`loop.set_task_factory() <asyncio.BaseEventLoop.get_task_factory>`
-  methods to customize the task factory that
-  :meth:`loop.create_task() <asyncio.BaseEventLoop.create_task>` method uses.
-  (Contributed by Yury Selivanov.)
+* New :meth:`loop.set_task_factory()
+  <asyncio.AbstractEventLoop.set_task_factory>` and
+  :meth:`loop.get_task_factory() <asyncio.AbstractEventLoop.get_task_factory>`
+  methods to customize the task factory that :meth:`loop.create_task()
+  <asyncio.BaseEventLoop.create_task>` method uses.  (Contributed by Yury
+  Selivanov.)
 
 * New :meth:`Queue.join() <asyncio.Queue.join>` and
   :meth:`Queue.task_done() <asyncio.Queue.task_done>` queue methods.

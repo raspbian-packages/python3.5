@@ -11,6 +11,7 @@ import sys
 import tempfile
 import threading
 import unittest
+import warnings
 from unittest import mock
 
 if sys.platform == 'win32':
@@ -240,11 +241,13 @@ class SelectorEventLoopUnixSocketTests(test_utils.TestCase):
         with test_utils.unix_socket_path() as path:
             sock = socket.socket(socket.AF_UNIX)
             sock.bind(path)
-            with sock:
-                coro = self.loop.create_unix_server(lambda: None, path)
-                with self.assertRaisesRegex(OSError,
-                                            'Address.*is already in use'):
-                    self.loop.run_until_complete(coro)
+            sock.listen(1)
+            sock.close()
+
+            coro = self.loop.create_unix_server(lambda: None, path)
+            srv = self.loop.run_until_complete(coro)
+            srv.close()
+            self.loop.run_until_complete(srv.wait_closed())
 
     def test_create_unix_server_existing_path_nonsock(self):
         with tempfile.NamedTemporaryFile() as file:
@@ -272,7 +275,16 @@ class SelectorEventLoopUnixSocketTests(test_utils.TestCase):
             coro = self.loop.create_unix_server(lambda: None, path=None,
                                                 sock=sock)
             with self.assertRaisesRegex(ValueError,
-                                        'A UNIX Domain Socket was expected'):
+                                        'A UNIX Domain Stream.*was expected'):
+                self.loop.run_until_complete(coro)
+
+    def test_create_unix_connection_path_inetsock(self):
+        sock = socket.socket()
+        with sock:
+            coro = self.loop.create_unix_connection(lambda: None, path=None,
+                                                    sock=sock)
+            with self.assertRaisesRegex(ValueError,
+                                        'A UNIX Domain Stream.*was expected'):
                 self.loop.run_until_complete(coro)
 
     @mock.patch('asyncio.unix_events.socket')
@@ -518,7 +530,7 @@ class UnixWritePipeTransportTests(test_utils.TestCase):
         tr.write(b'data')
         m_write.assert_called_with(5, b'data')
         self.assertFalse(self.loop.writers)
-        self.assertEqual([], tr._buffer)
+        self.assertEqual(bytearray(), tr._buffer)
 
     @mock.patch('os.write')
     def test_write_no_data(self, m_write):
@@ -526,35 +538,34 @@ class UnixWritePipeTransportTests(test_utils.TestCase):
         tr.write(b'')
         self.assertFalse(m_write.called)
         self.assertFalse(self.loop.writers)
-        self.assertEqual([], tr._buffer)
+        self.assertEqual(bytearray(b''), tr._buffer)
 
     @mock.patch('os.write')
     def test_write_partial(self, m_write):
         tr = self.write_pipe_transport()
         m_write.return_value = 2
         tr.write(b'data')
-        m_write.assert_called_with(5, b'data')
         self.loop.assert_writer(5, tr._write_ready)
-        self.assertEqual([b'ta'], tr._buffer)
+        self.assertEqual(bytearray(b'ta'), tr._buffer)
 
     @mock.patch('os.write')
     def test_write_buffer(self, m_write):
         tr = self.write_pipe_transport()
         self.loop.add_writer(5, tr._write_ready)
-        tr._buffer = [b'previous']
+        tr._buffer = bytearray(b'previous')
         tr.write(b'data')
         self.assertFalse(m_write.called)
         self.loop.assert_writer(5, tr._write_ready)
-        self.assertEqual([b'previous', b'data'], tr._buffer)
+        self.assertEqual(bytearray(b'previousdata'), tr._buffer)
 
     @mock.patch('os.write')
     def test_write_again(self, m_write):
         tr = self.write_pipe_transport()
         m_write.side_effect = BlockingIOError()
         tr.write(b'data')
-        m_write.assert_called_with(5, b'data')
+        m_write.assert_called_with(5, bytearray(b'data'))
         self.loop.assert_writer(5, tr._write_ready)
-        self.assertEqual([b'data'], tr._buffer)
+        self.assertEqual(bytearray(b'data'), tr._buffer)
 
     @mock.patch('asyncio.unix_events.logger')
     @mock.patch('os.write')
@@ -566,7 +577,7 @@ class UnixWritePipeTransportTests(test_utils.TestCase):
         tr.write(b'data')
         m_write.assert_called_with(5, b'data')
         self.assertFalse(self.loop.writers)
-        self.assertEqual([], tr._buffer)
+        self.assertEqual(bytearray(), tr._buffer)
         tr._fatal_error.assert_called_with(
                             err,
                             'Fatal write error on pipe transport')
@@ -606,58 +617,55 @@ class UnixWritePipeTransportTests(test_utils.TestCase):
     def test__write_ready(self, m_write):
         tr = self.write_pipe_transport()
         self.loop.add_writer(5, tr._write_ready)
-        tr._buffer = [b'da', b'ta']
+        tr._buffer = bytearray(b'data')
         m_write.return_value = 4
         tr._write_ready()
-        m_write.assert_called_with(5, b'data')
         self.assertFalse(self.loop.writers)
-        self.assertEqual([], tr._buffer)
+        self.assertEqual(bytearray(), tr._buffer)
 
     @mock.patch('os.write')
     def test__write_ready_partial(self, m_write):
         tr = self.write_pipe_transport()
         self.loop.add_writer(5, tr._write_ready)
-        tr._buffer = [b'da', b'ta']
+        tr._buffer = bytearray(b'data')
         m_write.return_value = 3
         tr._write_ready()
-        m_write.assert_called_with(5, b'data')
         self.loop.assert_writer(5, tr._write_ready)
-        self.assertEqual([b'a'], tr._buffer)
+        self.assertEqual(bytearray(b'a'), tr._buffer)
 
     @mock.patch('os.write')
     def test__write_ready_again(self, m_write):
         tr = self.write_pipe_transport()
         self.loop.add_writer(5, tr._write_ready)
-        tr._buffer = [b'da', b'ta']
+        tr._buffer = bytearray(b'data')
         m_write.side_effect = BlockingIOError()
         tr._write_ready()
-        m_write.assert_called_with(5, b'data')
+        m_write.assert_called_with(5, bytearray(b'data'))
         self.loop.assert_writer(5, tr._write_ready)
-        self.assertEqual([b'data'], tr._buffer)
+        self.assertEqual(bytearray(b'data'), tr._buffer)
 
     @mock.patch('os.write')
     def test__write_ready_empty(self, m_write):
         tr = self.write_pipe_transport()
         self.loop.add_writer(5, tr._write_ready)
-        tr._buffer = [b'da', b'ta']
+        tr._buffer = bytearray(b'data')
         m_write.return_value = 0
         tr._write_ready()
-        m_write.assert_called_with(5, b'data')
+        m_write.assert_called_with(5, bytearray(b'data'))
         self.loop.assert_writer(5, tr._write_ready)
-        self.assertEqual([b'data'], tr._buffer)
+        self.assertEqual(bytearray(b'data'), tr._buffer)
 
     @mock.patch('asyncio.log.logger.error')
     @mock.patch('os.write')
     def test__write_ready_err(self, m_write, m_logexc):
         tr = self.write_pipe_transport()
         self.loop.add_writer(5, tr._write_ready)
-        tr._buffer = [b'da', b'ta']
+        tr._buffer = bytearray(b'data')
         m_write.side_effect = err = OSError()
         tr._write_ready()
-        m_write.assert_called_with(5, b'data')
         self.assertFalse(self.loop.writers)
         self.assertFalse(self.loop.readers)
-        self.assertEqual([], tr._buffer)
+        self.assertEqual(bytearray(), tr._buffer)
         self.assertTrue(tr.is_closing())
         m_logexc.assert_called_with(
             test_utils.MockPattern(
@@ -673,13 +681,12 @@ class UnixWritePipeTransportTests(test_utils.TestCase):
         tr = self.write_pipe_transport()
         self.loop.add_writer(5, tr._write_ready)
         tr._closing = True
-        tr._buffer = [b'da', b'ta']
+        tr._buffer = bytearray(b'data')
         m_write.return_value = 4
         tr._write_ready()
-        m_write.assert_called_with(5, b'data')
         self.assertFalse(self.loop.writers)
         self.assertFalse(self.loop.readers)
-        self.assertEqual([], tr._buffer)
+        self.assertEqual(bytearray(), tr._buffer)
         self.protocol.connection_lost.assert_called_with(None)
         self.pipe.close.assert_called_with()
 
@@ -1396,7 +1403,9 @@ class ChildWatcherTestsMixin:
         with mock.patch.object(
                 old_loop, "remove_signal_handler") as m_remove_signal_handler:
 
-            self.watcher.attach_loop(None)
+            with self.assertWarnsRegex(
+                    RuntimeWarning, 'A loop is being detached'):
+                self.watcher.attach_loop(None)
 
             m_remove_signal_handler.assert_called_once_with(
                 signal.SIGCHLD)
@@ -1467,6 +1476,15 @@ class ChildWatcherTestsMixin:
                 self.assertFalse(self.watcher._callbacks)
                 if isinstance(self.watcher, asyncio.FastChildWatcher):
                     self.assertFalse(self.watcher._zombies)
+
+    @waitpid_mocks
+    def test_add_child_handler_with_no_loop_attached(self, m):
+        callback = mock.Mock()
+        with self.create_watcher() as watcher:
+            with self.assertRaisesRegex(
+                    RuntimeError,
+                    'the child watcher does not have a loop attached'):
+                watcher.add_child_handler(100, callback)
 
 
 class SafeChildWatcherTests (ChildWatcherTestsMixin, test_utils.TestCase):

@@ -1423,7 +1423,7 @@ class CoroutineTest(unittest.TestCase):
 
         with warnings.catch_warnings():
             warnings.simplefilter("error")
-            # Test that __aiter__ that returns an asyncronous iterator
+            # Test that __aiter__ that returns an asynchronous iterator
             # directly does not throw any warnings.
             run_async(main())
         self.assertEqual(I, 111011)
@@ -1564,6 +1564,15 @@ class CoroutineTest(unittest.TestCase):
                     pickle.dumps(aw, proto)
         finally:
             aw.close()
+
+    def test_fatal_coro_warning(self):
+        # Issue 27811
+        async def func(): pass
+        with warnings.catch_warnings(), support.captured_stderr() as stderr:
+            warnings.filterwarnings("error")
+            func()
+            support.gc_collect()
+        self.assertIn("was never awaited", stderr.getvalue())
 
 
 class CoroAsyncIOCompatTest(unittest.TestCase):

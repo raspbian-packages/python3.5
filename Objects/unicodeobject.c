@@ -1366,15 +1366,19 @@ PyUnicode_CopyCharacters(PyObject *to, Py_ssize_t to_start,
     if (PyUnicode_READY(to) == -1)
         return -1;
 
-    if (from_start < 0) {
+    if ((size_t)from_start > (size_t)PyUnicode_GET_LENGTH(from)) {
         PyErr_SetString(PyExc_IndexError, "string index out of range");
         return -1;
     }
-    if (to_start < 0) {
+    if ((size_t)to_start > (size_t)PyUnicode_GET_LENGTH(to)) {
         PyErr_SetString(PyExc_IndexError, "string index out of range");
         return -1;
     }
-    how_many = Py_MIN(PyUnicode_GET_LENGTH(from), how_many);
+    if (how_many < 0) {
+        PyErr_SetString(PyExc_SystemError, "how_many cannot be negative");
+        return -1;
+    }
+    how_many = Py_MIN(PyUnicode_GET_LENGTH(from)-from_start, how_many);
     if (to_start + how_many > PyUnicode_GET_LENGTH(to)) {
         PyErr_Format(PyExc_SystemError,
                      "Cannot write %zi characters at %zi "
@@ -2719,7 +2723,7 @@ PyUnicode_FromFormatV(const char *format, va_list vargs)
                         "PyUnicode_FromFormatV() expects an ASCII-encoded format "
                         "string, got a non-ASCII byte: 0x%02x",
                         (unsigned char)*p);
-                    return NULL;
+                    goto fail;
                 }
                 p++;
             }
@@ -3005,7 +3009,7 @@ PyUnicode_Decode(const char *s,
                      "'%.400s' decoder returned '%.400s' instead of 'str'; "
                      "use codecs.decode() to decode to arbitrary types",
                      encoding,
-                     Py_TYPE(unicode)->tp_name, Py_TYPE(unicode)->tp_name);
+                     Py_TYPE(unicode)->tp_name);
         Py_DECREF(unicode);
         goto onError;
     }
@@ -3022,24 +3026,16 @@ PyUnicode_AsDecodedObject(PyObject *unicode,
                           const char *encoding,
                           const char *errors)
 {
-    PyObject *v;
-
     if (!PyUnicode_Check(unicode)) {
         PyErr_BadArgument();
-        goto onError;
+        return NULL;
     }
 
     if (encoding == NULL)
         encoding = PyUnicode_GetDefaultEncoding();
 
     /* Decode via the codec registry */
-    v = PyCodec_Decode(unicode, encoding, errors);
-    if (v == NULL)
-        goto onError;
-    return unicode_result(v);
-
-  onError:
-    return NULL;
+    return PyCodec_Decode(unicode, encoding, errors);
 }
 
 PyObject *
@@ -3066,7 +3062,7 @@ PyUnicode_AsDecodedUnicode(PyObject *unicode,
                      "'%.400s' decoder returned '%.400s' instead of 'str'; "
                      "use codecs.decode() to decode to arbitrary types",
                      encoding,
-                     Py_TYPE(unicode)->tp_name, Py_TYPE(unicode)->tp_name);
+                     Py_TYPE(unicode)->tp_name);
         Py_DECREF(v);
         goto onError;
     }
@@ -3394,7 +3390,7 @@ PyUnicode_AsEncodedString(PyObject *unicode,
                  "'%.400s' encoder returned '%.400s' instead of 'bytes'; "
                  "use codecs.encode() to encode to arbitrary types",
                  encoding,
-                 Py_TYPE(v)->tp_name, Py_TYPE(v)->tp_name);
+                 Py_TYPE(v)->tp_name);
     Py_DECREF(v);
     return NULL;
 }
@@ -3423,7 +3419,7 @@ PyUnicode_AsEncodedUnicode(PyObject *unicode,
                      "'%.400s' encoder returned '%.400s' instead of 'str'; "
                      "use codecs.encode() to encode to arbitrary types",
                      encoding,
-                     Py_TYPE(v)->tp_name, Py_TYPE(v)->tp_name);
+                     Py_TYPE(v)->tp_name);
         Py_DECREF(v);
         goto onError;
     }
@@ -3666,7 +3662,7 @@ PyUnicode_FSDecoder(PyObject* arg, void* addr)
         output = arg;
         Py_INCREF(output);
     }
-    else {
+    else if (PyObject_CheckBuffer(arg)) {
         arg = PyBytes_FromObject(arg);
         if (!arg)
             return 0;
@@ -3680,6 +3676,12 @@ PyUnicode_FSDecoder(PyObject* arg, void* addr)
             PyErr_SetString(PyExc_TypeError, "decoder failed to return unicode");
             return 0;
         }
+    }
+    else {
+        PyErr_Format(PyExc_TypeError,
+                     "path should be string or bytes, not %.200s",
+                     Py_TYPE(arg)->tp_name);
+        return 0;
     }
     if (PyUnicode_READY(output) == -1) {
         Py_DECREF(output);
@@ -4938,7 +4940,7 @@ PyUnicode_DecodeUTF32Stateful(const char *s,
        mark is skipped, in all other modes, it is copied to the output
        stream as-is (giving a ZWNBSP character). */
     if (bo == 0 && size >= 4) {
-        Py_UCS4 bom = (q[3] << 24) | (q[2] << 16) | (q[1] << 8) | q[0];
+        Py_UCS4 bom = ((unsigned int)q[3] << 24) | (q[2] << 16) | (q[1] << 8) | q[0];
         if (bom == 0x0000FEFF) {
             bo = -1;
             q += 4;
@@ -4980,7 +4982,7 @@ PyUnicode_DecodeUTF32Stateful(const char *s,
             Py_ssize_t pos = writer.pos;
             if (le) {
                 do {
-                    ch = (q[3] << 24) | (q[2] << 16) | (q[1] << 8) | q[0];
+                    ch = ((unsigned int)q[3] << 24) | (q[2] << 16) | (q[1] << 8) | q[0];
                     if (ch > maxch)
                         break;
                     if (kind != PyUnicode_1BYTE_KIND &&
@@ -4992,7 +4994,7 @@ PyUnicode_DecodeUTF32Stateful(const char *s,
             }
             else {
                 do {
-                    ch = (q[0] << 24) | (q[1] << 16) | (q[2] << 8) | q[3];
+                    ch = ((unsigned int)q[0] << 24) | (q[1] << 16) | (q[2] << 8) | q[3];
                     if (ch > maxch)
                         break;
                     if (kind != PyUnicode_1BYTE_KIND &&

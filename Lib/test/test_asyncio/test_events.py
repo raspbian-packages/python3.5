@@ -1,5 +1,6 @@
 """Tests for events.py."""
 
+import collections.abc
 import functools
 import gc
 import io
@@ -21,8 +22,11 @@ import unittest
 from unittest import mock
 import weakref
 
+if sys.platform != 'win32':
+    import tty
 
 import asyncio
+from asyncio import coroutines
 from asyncio import proactor_events
 from asyncio import selector_events
 from asyncio import sslproto
@@ -743,6 +747,85 @@ class EventLoopTestsMixin:
                 self.loop.run_until_complete(f)
             self.assertEqual(cm.exception.errno, errno.EADDRINUSE)
             self.assertIn(str(httpd.address), cm.exception.strerror)
+
+    def test_connect_accepted_socket(self, server_ssl=None, client_ssl=None):
+        loop = self.loop
+
+        class MyProto(MyBaseProto):
+
+            def connection_lost(self, exc):
+                super().connection_lost(exc)
+                loop.call_soon(loop.stop)
+
+            def data_received(self, data):
+                super().data_received(data)
+                self.transport.write(expected_response)
+
+        lsock = socket.socket()
+        lsock.bind(('127.0.0.1', 0))
+        lsock.listen(1)
+        addr = lsock.getsockname()
+
+        message = b'test data'
+        response = None
+        expected_response = b'roger'
+
+        def client():
+            nonlocal response
+            try:
+                csock = socket.socket()
+                if client_ssl is not None:
+                    csock = client_ssl.wrap_socket(csock)
+                csock.connect(addr)
+                csock.sendall(message)
+                response = csock.recv(99)
+                csock.close()
+            except Exception as exc:
+                print(
+                    "Failure in client thread in test_connect_accepted_socket",
+                    exc)
+
+        thread = threading.Thread(target=client, daemon=True)
+        thread.start()
+
+        conn, _ = lsock.accept()
+        proto = MyProto(loop=loop)
+        proto.loop = loop
+        f = loop.create_task(
+            loop.connect_accepted_socket(
+                (lambda : proto), conn, ssl=server_ssl))
+        loop.run_forever()
+        proto.transport.close()
+        lsock.close()
+
+        thread.join(1)
+        self.assertFalse(thread.is_alive())
+        self.assertEqual(proto.state, 'CLOSED')
+        self.assertEqual(proto.nbytes, len(message))
+        self.assertEqual(response, expected_response)
+
+    @unittest.skipIf(ssl is None, 'No ssl module')
+    def test_ssl_connect_accepted_socket(self):
+        if (sys.platform == 'win32' and
+            sys.version_info < (3, 5) and
+            isinstance(self.loop, proactor_events.BaseProactorEventLoop)
+            ):
+            raise unittest.SkipTest(
+                'SSL not supported with proactor event loops before Python 3.5'
+                )
+
+        server_context = ssl.SSLContext(ssl.PROTOCOL_SSLv23)
+        server_context.load_cert_chain(ONLYCERT, ONLYKEY)
+        if hasattr(server_context, 'check_hostname'):
+            server_context.check_hostname = False
+        server_context.verify_mode = ssl.CERT_NONE
+
+        client_context = ssl.SSLContext(ssl.PROTOCOL_SSLv23)
+        if hasattr(server_context, 'check_hostname'):
+            client_context.check_hostname = False
+        client_context.verify_mode = ssl.CERT_NONE
+
+        self.test_connect_accepted_socket(server_context, client_context)
 
     @mock.patch('asyncio.base_events.socket')
     def create_server_multiple_hosts(self, family, hosts, mock_sock):
@@ -1547,6 +1630,79 @@ class EventLoopTestsMixin:
         self.loop.run_until_complete(proto.done)
         self.assertEqual('CLOSED', proto.state)
 
+    @unittest.skipUnless(sys.platform != 'win32',
+                         "Don't support pipes for Windows")
+    # select, poll and kqueue don't support character devices (PTY) on Mac OS X
+    # older than 10.6 (Snow Leopard)
+    @support.requires_mac_ver(10, 6)
+    def test_bidirectional_pty(self):
+        master, read_slave = os.openpty()
+        write_slave = os.dup(read_slave)
+        tty.setraw(read_slave)
+
+        slave_read_obj = io.open(read_slave, 'rb', 0)
+        read_proto = MyReadPipeProto(loop=self.loop)
+        read_connect = self.loop.connect_read_pipe(lambda: read_proto,
+                                                   slave_read_obj)
+        read_transport, p = self.loop.run_until_complete(read_connect)
+        self.assertIs(p, read_proto)
+        self.assertIs(read_transport, read_proto.transport)
+        self.assertEqual(['INITIAL', 'CONNECTED'], read_proto.state)
+        self.assertEqual(0, read_proto.nbytes)
+
+
+        slave_write_obj = io.open(write_slave, 'wb', 0)
+        write_proto = MyWritePipeProto(loop=self.loop)
+        write_connect = self.loop.connect_write_pipe(lambda: write_proto,
+                                                     slave_write_obj)
+        write_transport, p = self.loop.run_until_complete(write_connect)
+        self.assertIs(p, write_proto)
+        self.assertIs(write_transport, write_proto.transport)
+        self.assertEqual('CONNECTED', write_proto.state)
+
+        data = bytearray()
+        def reader(data):
+            chunk = os.read(master, 1024)
+            data += chunk
+            return len(data)
+
+        write_transport.write(b'1')
+        test_utils.run_until(self.loop, lambda: reader(data) >= 1, timeout=10)
+        self.assertEqual(b'1', data)
+        self.assertEqual(['INITIAL', 'CONNECTED'], read_proto.state)
+        self.assertEqual('CONNECTED', write_proto.state)
+
+        os.write(master, b'a')
+        test_utils.run_until(self.loop, lambda: read_proto.nbytes >= 1,
+                             timeout=10)
+        self.assertEqual(['INITIAL', 'CONNECTED'], read_proto.state)
+        self.assertEqual(1, read_proto.nbytes)
+        self.assertEqual('CONNECTED', write_proto.state)
+
+        write_transport.write(b'2345')
+        test_utils.run_until(self.loop, lambda: reader(data) >= 5, timeout=10)
+        self.assertEqual(b'12345', data)
+        self.assertEqual(['INITIAL', 'CONNECTED'], read_proto.state)
+        self.assertEqual('CONNECTED', write_proto.state)
+
+        os.write(master, b'bcde')
+        test_utils.run_until(self.loop, lambda: read_proto.nbytes >= 5,
+                             timeout=10)
+        self.assertEqual(['INITIAL', 'CONNECTED'], read_proto.state)
+        self.assertEqual(5, read_proto.nbytes)
+        self.assertEqual('CONNECTED', write_proto.state)
+
+        os.close(master)
+
+        read_transport.close()
+        self.loop.run_until_complete(read_proto.done)
+        self.assertEqual(
+            ['INITIAL', 'CONNECTED', 'EOF', 'CLOSED'], read_proto.state)
+
+        write_transport.close()
+        self.loop.run_until_complete(write_proto.done)
+        self.assertEqual('CLOSED', write_proto.state)
+
     def test_prompt_cancellation(self):
         r, w = test_utils.socketpair()
         r.setblocking(False)
@@ -2070,7 +2226,7 @@ else:
             return asyncio.SelectorEventLoop(selectors.SelectSelector())
 
 
-def noop(*args):
+def noop(*args, **kwargs):
     pass
 
 
@@ -2151,6 +2307,13 @@ class HandleTests(test_utils.TestCase):
                  % (re.escape(filename), lineno))
         self.assertRegex(repr(h), regex)
 
+        # partial function with keyword args
+        cb = functools.partial(noop, x=1)
+        h = asyncio.Handle(cb, (2, 3), self.loop)
+        regex = (r'^<Handle noop\(x=1\)\(2, 3\) at %s:%s>$'
+                 % (re.escape(filename), lineno))
+        self.assertRegex(repr(h), regex)
+
         # partial method
         if sys.version_info >= (3, 4):
             method = HandleTests.test_handle_repr
@@ -2218,6 +2381,38 @@ class HandleTests(test_utils.TestCase):
         # call_at
         h = loop.call_later(0, noop)
         check_source_traceback(h)
+
+    @unittest.skipUnless(hasattr(collections.abc, 'Coroutine'),
+                         'No collections.abc.Coroutine')
+    def test_coroutine_like_object_debug_formatting(self):
+        # Test that asyncio can format coroutines that are instances of
+        # collections.abc.Coroutine, but lack cr_core or gi_code attributes
+        # (such as ones compiled with Cython).
+
+        class Coro:
+            __name__ = 'AAA'
+
+            def send(self, v):
+                pass
+
+            def throw(self, *exc):
+                pass
+
+            def close(self):
+                pass
+
+            def __await__(self):
+                pass
+
+        coro = Coro()
+        self.assertTrue(asyncio.iscoroutine(coro))
+        self.assertEqual(coroutines._format_coroutine(coro), 'AAA()')
+
+        coro.__qualname__ = 'BBB'
+        self.assertEqual(coroutines._format_coroutine(coro), 'BBB()')
+
+        coro.cr_running = True
+        self.assertEqual(coroutines._format_coroutine(coro), 'BBB() running')
 
 
 class TimerTests(unittest.TestCase):

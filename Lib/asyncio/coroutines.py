@@ -120,8 +120,8 @@ class CoroWrapper:
         def send(self, value):
             return self.gen.send(value)
 
-    def throw(self, exc):
-        return self.gen.throw(exc)
+    def throw(self, type, value=None, traceback=None):
+        return self.gen.throw(type, value, traceback)
 
     def close(self):
         return self.gen.close()
@@ -204,8 +204,8 @@ def coroutine(func):
         @functools.wraps(func)
         def coro(*args, **kw):
             res = func(*args, **kw)
-            if isinstance(res, futures.Future) or inspect.isgenerator(res) or \
-                    isinstance(res, CoroWrapper):
+            if (futures.isfuture(res) or inspect.isgenerator(res) or
+                isinstance(res, CoroWrapper)):
                 res = yield from res
             elif _AwaitableABC is not None:
                 # If 'func' returns an Awaitable (new in 3.5) we
@@ -261,6 +261,25 @@ def iscoroutine(obj):
 def _format_coroutine(coro):
     assert iscoroutine(coro)
 
+    if not hasattr(coro, 'cr_code') and not hasattr(coro, 'gi_code'):
+        # Most likely a Cython coroutine.
+        coro_name = getattr(coro, '__qualname__', coro.__name__)
+        coro_name = '{}()'.format(coro_name)
+
+        running = False
+        try:
+            running = coro.cr_running
+        except AttributeError:
+            try:
+                running = coro.gi_running
+            except AttributeError:
+                pass
+
+        if running:
+            return '{} running'.format(coro_name)
+        else:
+            return coro_name
+
     coro_name = None
     if isinstance(coro, CoroWrapper):
         func = coro.func
@@ -271,7 +290,7 @@ def _format_coroutine(coro):
         func = coro
 
     if coro_name is None:
-        coro_name = events._format_callback(func, ())
+        coro_name = events._format_callback(func, (), {})
 
     try:
         coro_code = coro.gi_code

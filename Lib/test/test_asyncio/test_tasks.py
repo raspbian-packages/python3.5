@@ -92,6 +92,17 @@ class TaskTests(test_utils.TestCase):
         finally:
             other_loop.close()
 
+    def test_task_awaits_on_itself(self):
+        @asyncio.coroutine
+        def test():
+            yield from task
+
+        task = asyncio.ensure_future(test(), loop=self.loop)
+
+        with self.assertRaisesRegex(RuntimeError,
+                                    'Task cannot await on itself'):
+            self.loop.run_until_complete(task)
+
     def test_task_class(self):
         @asyncio.coroutine
         def notmuch():
@@ -1723,6 +1734,37 @@ class TaskTests(test_utils.TestCase):
         wd['cw'] = cw  # Would fail without __weakref__ slot.
         cw.gen = None  # Suppress warning from __del__.
 
+    def test_corowrapper_throw(self):
+        # Issue 429: CoroWrapper.throw must be compatible with gen.throw
+        def foo():
+            value = None
+            while True:
+                try:
+                    value = yield value
+                except Exception as e:
+                    value = e
+
+        exception = Exception("foo")
+        cw = asyncio.coroutines.CoroWrapper(foo())
+        cw.send(None)
+        self.assertIs(exception, cw.throw(exception))
+
+        cw = asyncio.coroutines.CoroWrapper(foo())
+        cw.send(None)
+        self.assertIs(exception, cw.throw(Exception, exception))
+
+        cw = asyncio.coroutines.CoroWrapper(foo())
+        cw.send(None)
+        exception = cw.throw(Exception, "foo")
+        self.assertIsInstance(exception, Exception)
+        self.assertEqual(exception.args, ("foo", ))
+
+        cw = asyncio.coroutines.CoroWrapper(foo())
+        cw.send(None)
+        exception = cw.throw(Exception, "foo", None)
+        self.assertIsInstance(exception, Exception)
+        self.assertEqual(exception.args, ("foo", ))
+
     @unittest.skipUnless(PY34,
                          'need python 3.4 or later')
     def test_log_destroyed_pending_task(self):
@@ -1856,6 +1898,36 @@ class TaskTests(test_utils.TestCase):
 
     def test_cancel_wait_for(self):
         self._test_cancel_wait_for(60.0)
+
+    def test_cancel_gather(self):
+        """Ensure that a gathering future refuses to be cancelled once all
+        children are done"""
+        loop = asyncio.new_event_loop()
+        self.addCleanup(loop.close)
+
+        fut = asyncio.Future(loop=loop)
+        # The indirection fut->child_coro is needed since otherwise the
+        # gathering task is done at the same time as the child future
+        def child_coro():
+            return (yield from fut)
+        gather_future = asyncio.gather(child_coro(), loop=loop)
+        gather_task = asyncio.ensure_future(gather_future, loop=loop)
+
+        cancel_result = None
+        def cancelling_callback(_):
+            nonlocal cancel_result
+            cancel_result = gather_task.cancel()
+        fut.add_done_callback(cancelling_callback)
+
+        fut.set_result(42) # calls the cancelling_callback after fut is done()
+
+        # At this point the task should complete.
+        loop.run_until_complete(gather_task)
+
+        # Python issue #26923: asyncio.gather drops cancellation
+        self.assertEqual(cancel_result, False)
+        self.assertFalse(gather_task.cancelled())
+        self.assertEqual(gather_task.result(), [42])
 
 
 class GatherTestsBase:

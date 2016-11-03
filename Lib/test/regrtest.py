@@ -325,9 +325,6 @@ def _create_parser():
     group.add_argument('-P', '--pgo', dest='pgo', action='store_true',
                        help='enable Profile Guided Optimization training')
 
-    parser.add_argument('args', nargs=argparse.REMAINDER,
-                        help=argparse.SUPPRESS)
-
     return parser
 
 def relative_filename(string):
@@ -373,7 +370,13 @@ def _parse_args(args, **kwargs):
         ns.use_resources = []
 
     parser = _create_parser()
-    parser.parse_args(args=args, namespace=ns)
+    # Issue #14191: argparse doesn't support "intermixed" positional and
+    # optional arguments. Use parse_known_args() as workaround.
+    ns.args = parser.parse_known_args(args=args, namespace=ns)[1]
+    for arg in ns.args:
+        if arg.startswith('-'):
+            parser.error("unrecognized arguments: %s" % arg)
+            sys.exit(1)
 
     if ns.single and ns.fromfile:
         parser.error("-s and -f don't go together!")
@@ -989,7 +992,7 @@ def runtest(test, verbose, quiet,
                 sys.stderr = stream
                 result = runtest_inner(test, verbose, quiet, huntrleaks,
                                        display_failure=False, pgo=pgo)
-                if result[0] == FAILED and not pgo:
+                if result[0] != PASSED and not pgo:
                     output = stream.getvalue()
                     orig_stderr.write(output)
                     orig_stderr.flush()
@@ -1258,6 +1261,7 @@ class saved_test_environment:
     def __exit__(self, exc_type, exc_val, exc_tb):
         saved_values = self.saved_values
         del self.saved_values
+        support.gc_collect()  # Some resources use weak references
         for name, get, restore in self.resource_info():
             current = get()
             original = saved_values.pop(name)
