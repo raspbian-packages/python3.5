@@ -589,6 +589,7 @@ class ReferencesTestCase(TestBase):
         del c1, c2, C, D
         gc.collect()
 
+    @support.requires_type_collecting
     def test_callback_in_cycle_resurrection(self):
         import gc
 
@@ -843,6 +844,14 @@ class ReferencesTestCase(TestBase):
         ref1 = weakref.ref(x, callback)
         with self.assertRaises(AttributeError):
             ref1.__callback__ = lambda ref: None
+
+    def test_callback_gcs(self):
+        class ObjectWithDel(Object):
+            def __del__(self): pass
+        x = ObjectWithDel(1)
+        ref1 = weakref.ref(x, lambda ref: support.gc_collect())
+        del x
+        support.gc_collect()
 
 
 class SubclassableWeakrefTestCase(TestBase):

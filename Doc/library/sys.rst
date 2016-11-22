@@ -1192,7 +1192,7 @@ always available.
    .. note::
        Under some conditions ``stdin``, ``stdout`` and ``stderr`` as well as the
        original values ``__stdin__``, ``__stdout__`` and ``__stderr__`` can be
-       None. It is usually the case for Windows GUI apps that aren't connected
+       ``None``. It is usually the case for Windows GUI apps that aren't connected
        to a console and Python apps started with :program:`pythonw`.
 
 
@@ -1282,7 +1282,9 @@ always available.
 
    A dictionary of the various implementation-specific flags passed through
    the :option:`-X` command-line option.  Option names are either mapped to
-   their values, if given explicitly, or to :const:`True`.  Example::
+   their values, if given explicitly, or to :const:`True`.  Example:
+
+   .. code-block:: shell-session
 
       $ ./python -Xa=b -Xc
       Python 3.2a3+ (py3k, Oct 16 2010, 20:14:50)

@@ -5,6 +5,7 @@ try:
 except ImportError:  # pragma: no cover
     ssl = None
 
+from . import base_events
 from . import compat
 from . import protocols
 from . import transports
@@ -304,6 +305,12 @@ class _SSLProtocolTransport(transports._FlowControlMixin,
         """Get optional transport information."""
         return self._ssl_protocol._get_extra_info(name, default)
 
+    def set_protocol(self, protocol):
+        self._app_protocol = protocol
+
+    def get_protocol(self):
+        return self._app_protocol
+
     def is_closing(self):
         return self._closed
 
@@ -403,7 +410,8 @@ class SSLProtocol(protocols.Protocol):
     """
 
     def __init__(self, loop, app_protocol, sslcontext, waiter,
-                 server_side=False, server_hostname=None):
+                 server_side=False, server_hostname=None,
+                 call_connection_made=True):
         if ssl is None:
             raise RuntimeError('stdlib ssl module not available')
 
@@ -436,6 +444,7 @@ class SSLProtocol(protocols.Protocol):
         self._in_shutdown = False
         # transport, ex: SelectorSocketTransport
         self._transport = None
+        self._call_connection_made = call_connection_made
 
     def _wakeup_waiter(self, exc=None):
         if self._waiter is None:
@@ -599,7 +608,8 @@ class SSLProtocol(protocols.Protocol):
                            compression=sslobj.compression(),
                            ssl_object=sslobj,
                            )
-        self._app_protocol.connection_made(self._app_transport)
+        if self._call_connection_made:
+            self._app_protocol.connection_made(self._app_transport)
         self._wakeup_waiter()
         self._session_established = True
         # In case transport.write() was already called. Don't call

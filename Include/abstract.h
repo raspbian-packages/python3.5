@@ -458,7 +458,7 @@ xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx*/
     /* old buffer API
        FIXME:  usage of these should all be replaced in Python itself
        but for backwards compatibility we will implement them.
-       Their usage without a corresponding "unlock" mechansim
+       Their usage without a corresponding "unlock" mechanism
        may create issues (but they would already be there). */
 
      PyAPI_FUNC(int) PyObject_AsCharBuffer(PyObject *obj,
@@ -1216,23 +1216,23 @@ xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx*/
      PyAPI_FUNC(PyObject *) PyMapping_Keys(PyObject *o);
 
        /*
-     On success, return a list, a tuple or a dictionary view in case of a dict,
-     of the keys in object o. On failure, return NULL.
+     On success, return a list or tuple of the keys in object o.
+     On failure, return NULL.
        */
 
      PyAPI_FUNC(PyObject *) PyMapping_Values(PyObject *o);
 
        /*
-     On success, return a list, a tuple or a dictionary view in case of a dict,
-     of the values in object o. On failure, return NULL.
+     On success, return a list or tuple of the values in object o.
+     On failure, return NULL.
        */
 
      PyAPI_FUNC(PyObject *) PyMapping_Items(PyObject *o);
 
        /*
-     On success, return a list, a tuple or a dictionary view in case of a dict,
-     of the items in object o, where each item is a tuple containing a key-value
-     pair. On failure, return NULL.
+     On success, return a list or tuple of the items in object o,
+     where each item is a tuple containing a key-value pair.
+     On failure, return NULL.
 
        */
 
