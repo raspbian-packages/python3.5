@@ -425,6 +425,11 @@ def _parse_args(args, **kwargs):
                     ns.use_resources.append(r)
     if ns.random_seed is not None:
         ns.randomize = True
+    if ns.huntrleaks and ns.verbose3:
+        ns.verbose3 = False
+        print("WARNING: Disable --verbose3 because it's incompatible with "
+              "--huntrleaks: see http://bugs.python.org/issue27103",
+              file=sys.stderr)
 
     return ns
 
@@ -1267,10 +1272,9 @@ class saved_test_environment:
                     print("Warning -- {} was modified by {}".format(
                                                  name, self.testname),
                                                  file=sys.stderr)
-                    if self.verbose > 1 and not self.pgo:
-                        print("  Before: {}\n  After:  {} ".format(
-                                                  original, current),
-                                                  file=sys.stderr)
+                    print("  Before: {}\n  After:  {} ".format(
+                                              original, current),
+                                              file=sys.stderr)
         return False
 
 
@@ -1480,9 +1484,14 @@ def dash_R_cleanup(fs, ps, pic, zdc, abcs):
     sys._clear_type_cache()
 
     # Clear ABC registries, restoring previously saved ABC registries.
-    for abc in [getattr(collections.abc, a) for a in collections.abc.__all__]:
-        if not isabstract(abc):
-            continue
+    abs_classes = [getattr(collections.abc, a) for a in collections.abc.__all__]
+    abs_classes = filter(isabstract, abs_classes)
+    if 'typing' in sys.modules:
+        t = sys.modules['typing']
+        # these classes require special treatment because they do not appear
+        # in direct subclasses on collections.abc classes
+        abs_classes = list(abs_classes) + [t.ChainMap, t.Counter, t.DefaultDict]
+    for abc in abs_classes:
         for obj in abc.__subclasses__() + [abc]:
             obj._abc_registry = abcs.get(obj, WeakSet()).copy()
             obj._abc_cache.clear()
