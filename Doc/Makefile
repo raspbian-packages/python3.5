@@ -40,7 +40,6 @@ help:
 
 build:
 	-mkdir -p build
-	$(BLURB) merge -f build/NEWS
 	$(SPHINXBUILD) $(ALLSPHINXOPTS)
 	@echo
 
