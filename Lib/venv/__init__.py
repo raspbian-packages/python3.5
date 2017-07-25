@@ -261,7 +261,28 @@ class EnvBuilder:
         # intended for the global Python environment
         cmd = [context.env_exe, '-Im', 'ensurepip', '--upgrade',
                                                     '--default-pip']
-        subprocess.check_output(cmd, stderr=subprocess.STDOUT)
+        # Debian 2015-09-18 barry@debian.org: <python>-venv is a separate
+        # binary package which might not be installed.  In that case, the
+        # following command will produce an unhelpful error.  Let's make it
+        # more user friendly.
+        try:
+            subprocess.check_output(
+                cmd, stderr=subprocess.STDOUT,
+                universal_newlines=True)
+        except subprocess.CalledProcessError:
+            print("""\
+The virtual environment was not created successfully because ensurepip is not
+available.  On Debian/Ubuntu systems, you need to install the python3-venv
+package using the following command.
+
+    apt-get install python3-venv
+
+You may need to use sudo with that command.  After installing the python3-venv
+package, recreate your virtual environment.
+
+Failing command: {}
+""".format(cmd))
+            sys.exit(1)
 
     def setup_scripts(self, context):
         """
