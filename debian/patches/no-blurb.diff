@@ -1,0 +1,12 @@
+Index: b/Doc/Makefile
+===================================================================
+--- a/Doc/Makefile
++++ b/Doc/Makefile
+@@ -40,7 +40,6 @@ help:
+ 
+ build:
+ 	-mkdir -p build
+-	$(BLURB) merge -f build/NEWS
+ 	$(SPHINXBUILD) $(ALLSPHINXOPTS)
+ 	@echo
+ 
