@@ -1014,6 +1014,17 @@ class BasicTest(TestCase):
         conn.putrequest('GET', '/☃')
 
 
+    def test_putrequest_override_host_validation(self):
+        class UnsafeHTTPConnection(client.HTTPConnection):
+            def _validate_host(self, url):
+                pass
+
+        conn = UnsafeHTTPConnection('example.com\r\n')
+        conn.sock = FakeSocket('')
+        # set skip_host so a ValueError is not raised upon adding the
+        # invalid URL as the value of the "Host:" header
+        conn.putrequest('GET', '/', skip_host=1)
+
 class ExtendedReadTest(TestCase):
     """
     Test peek(), read1(), readline()
