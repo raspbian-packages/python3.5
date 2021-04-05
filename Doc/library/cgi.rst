@@ -188,6 +188,9 @@ A form submitted via POST that also has a query string will contain both
    Added support for the context management protocol to the
    :class:`FieldStorage` class.
 
+.. versionchanged:: 3.5.3-1+deb9u4
+   Added the *separator* parameter.
+
 
 Higher Level Interface
 ----------------------
@@ -277,10 +280,10 @@ These are useful if you want more control, or if you want to employ some of the
 algorithms implemented in this module in other circumstances.
 
 
-.. function:: parse(fp=None, environ=os.environ, keep_blank_values=False, strict_parsing=False)
+.. function:: parse(fp=None, environ=os.environ, keep_blank_values=False, strict_parsing=False, separator="&")
 
    Parse a query in the environment or from a file (the file defaults to
-   ``sys.stdin``).  The *keep_blank_values* and *strict_parsing* parameters are
+   ``sys.stdin``).  The *keep_blank_values*, *strict_parsing* parameters and *separator* parameters are
    passed to :func:`urllib.parse.parse_qs` unchanged.
 
 

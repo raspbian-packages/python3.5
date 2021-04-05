@@ -117,7 +117,7 @@ log = initlog           # The current logging function
 # 0 ==> unlimited input
 maxlen = 0
 
-def parse(fp=None, environ=os.environ, keep_blank_values=0, strict_parsing=0):
+def parse(fp=None, environ=os.environ, keep_blank_values=0, strict_parsing=0, separator='&'):
     """Parse a query in the environment or from a file (default stdin)
 
         Arguments, all optional:
@@ -136,6 +136,9 @@ def parse(fp=None, environ=os.environ, keep_blank_values=0, strict_parsing=0):
         strict_parsing: flag indicating what to do with parsing errors.
             If false (the default), errors are silently ignored.
             If true, errors raise a ValueError exception.
+
+        separator: str. The symbol to use for separating the query arguments.
+            Defaults to &.
     """
     if fp is None:
         fp = sys.stdin
@@ -156,7 +159,7 @@ def parse(fp=None, environ=os.environ, keep_blank_values=0, strict_parsing=0):
     if environ['REQUEST_METHOD'] == 'POST':
         ctype, pdict = parse_header(environ['CONTENT_TYPE'])
         if ctype == 'multipart/form-data':
-            return parse_multipart(fp, pdict)
+            return parse_multipart(fp, pdict, separator=separator)
         elif ctype == 'application/x-www-form-urlencoded':
             clength = int(environ['CONTENT_LENGTH'])
             if maxlen and clength > maxlen:
@@ -180,7 +183,7 @@ def parse(fp=None, environ=os.environ, keep_blank_values=0, strict_parsing=0):
             qs = ""
         environ['QUERY_STRING'] = qs    # XXX Shouldn't, really
     return urllib.parse.parse_qs(qs, keep_blank_values, strict_parsing,
-                                 encoding=encoding)
+                                 encoding=encoding, separator=separator)
 
 
 # parse query string function called from urlparse,
@@ -198,7 +201,7 @@ def parse_qsl(qs, keep_blank_values=0, strict_parsing=0):
          DeprecationWarning, 2)
     return urllib.parse.parse_qsl(qs, keep_blank_values, strict_parsing)
 
-def parse_multipart(fp, pdict):
+def parse_multipart(fp, pdict, separator='&'):
     """Parse multipart input.
 
     Arguments:
@@ -404,7 +407,7 @@ class FieldStorage:
     """
     def __init__(self, fp=None, headers=None, outerboundary=b'',
                  environ=os.environ, keep_blank_values=0, strict_parsing=0,
-                 limit=None, encoding='utf-8', errors='replace'):
+                 limit=None, encoding='utf-8', errors='replace', separator='&'):
         """Constructor.  Read multipart/* until last part.
 
         Arguments, all optional:
@@ -448,6 +451,7 @@ class FieldStorage:
         method = 'GET'
         self.keep_blank_values = keep_blank_values
         self.strict_parsing = strict_parsing
+        self.separator = separator
         if 'REQUEST_METHOD' in environ:
             method = environ['REQUEST_METHOD'].upper()
         self.qs_on_post = None
@@ -673,7 +677,7 @@ class FieldStorage:
         self.list = []
         query = urllib.parse.parse_qsl(
             qs, self.keep_blank_values, self.strict_parsing,
-            encoding=self.encoding, errors=self.errors)
+            encoding=self.encoding, errors=self.errors, separator=self.separator)
         for key, value in query:
             self.list.append(MiniFieldStorage(key, value))
         self.skip_lines()
@@ -689,7 +693,7 @@ class FieldStorage:
         if self.qs_on_post:
             query = urllib.parse.parse_qsl(
                 self.qs_on_post, self.keep_blank_values, self.strict_parsing,
-                encoding=self.encoding, errors=self.errors)
+                encoding=self.encoding, errors=self.errors, separator=self.separator)
             for key, value in query:
                 self.list.append(MiniFieldStorage(key, value))
 
@@ -727,7 +731,7 @@ class FieldStorage:
 
             part = klass(self.fp, headers, ib, environ, keep_blank_values,
                          strict_parsing,self.limit-self.bytes_read,
-                         self.encoding, self.errors)
+                         self.encoding, self.errors, self.separator)
             self.bytes_read += part.bytes_read
             self.list.append(part)
             if part.done or self.bytes_read >= self.length > 0:
